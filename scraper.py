@@ -3,14 +3,28 @@ from dotenv import load_dotenv
 import os
 import requests
 from bs4 import BeautifulSoup
+from unidecode import unidecode
 
 new_headers = {
     "Location": None, "Name": "QTH/Név", "Frequency": "Lejövő[kHz]", "Duplex":None, "Offset":"Elt.[kHz]", "Tone":None, "rToneFreq":None, "cToneFreq":None, "DtcsCode":None, "DtcsPolarity":None, "RxDtcsCode":None, "CrossMode":None, "Mode":"Üzemmód", "TStep":None, "Skip":None, "Power":None, "Comment":None, "URCALL":None, "RPT1CALL":None, "RPT2CALL":None, "DVCODE":None}
 
+def create_from(id: int, name: str, freq: str, comment: str):
+    return [str(id), name, freq, '-', '0', '', '88.5', '88.5', '023', 'NN', '023', 'Tone->Tone', 'FM', '12.5', '', '1.0W', comment, '', '', '', '']
+
 # Location,Name,Frequency,Duplex,Offset,Tone,rToneFreq,cToneFreq,DtcsCode,DtcsPolarity,RxDtcsCode,CrossMode,Mode,TStep,Skip,Power,Comment,URCALL,RPT1CALL,RPT2CALL,DVCODE
 fix_stations = [
-    ['0', 'BUD REPTER', '118.1000', '-', '0', 'Tone', '88.5', '88.5', '023', 'NN', '023', 'Tone->Tone', 'FM', '12.5', '', '50W', 'BUD REPTER, BUDAPESTI REPÜLŐTÉR', '', '', '', '']
+    create_from(0, 'BUD REPTER', '118.1000', 'BUD REPTER, BUDAPESTI REPÜLŐTÉR'),
+    create_from(1, 'BALATON NY', '161.7000', 'BALATON INFO NYUGAT'),
+    create_from(2, 'BALATON K', '161.6000', 'BALATON INFO KELET'),
+    create_from(3, 'VHF HIVO', '145.5000', 'VHF (2m) HIVO'),
+    create_from(4, 'UHF HIVO', '433.5000', 'UHF (70cm) HIVO')
 ]
+
+def fix_station_name(nameOrig, maxLen=10):
+    name = nameOrig.upper().replace('BUDAPEST', 'BP').replace('(', '').replace(')', '')
+    # replace special characters
+    name = unidecode(name)
+    return name[:maxLen] if len(name) > maxLen else name
 
 def convert_table(csv_writer, loc, table, isDMR):
     print(f"{"normal" if not isDMR else "DMR"} table:")
@@ -45,8 +59,8 @@ def convert_table(csv_writer, loc, table, isDMR):
             if colName == "Location":
                 new_line.append(loc + rc - 1)
             elif colName == "Name":
-                nameS = data[headerNames.index(oldName)]
-                new_line.append(nameS[:8])
+                nameS = fix_station_name(data[headerNames.index(oldName)])
+                new_line.append(nameS)
             elif colName == "Frequency":
                 f = float(data[headerNames.index(oldName)]) / 1000
                 new_line.append(f)
@@ -86,13 +100,13 @@ def convert_table(csv_writer, loc, table, isDMR):
             elif colName == "CrossMode":
                 new_line.append('Tone->Tone')
             elif colName == "Mode":
-                new_line.append('DMR' if isDMR else ('FM' if data[headerNames.index(oldName)] == 'FM' else 'DN'))
+                new_line.append('DMR' if isDMR else ('FM' if 'FM' in data[headerNames.index(oldName)] else 'DN'))
             elif colName == "TStep":
                 new_line.append('12.5')
             elif colName == "Skip":
                 new_line.append('')
             elif colName == "Power":
-                new_line.append('50W')
+                new_line.append('1.0W')
             elif colName == "Comment":
                 c = data[headerNames.index('Hívójel')] + " " + data[headerNames.index('QTH/Név')] + ", QTH: " + data[headerNames.index('QTH Lokátor')]
                 new_line.append(c)
@@ -145,19 +159,47 @@ def main(refresh=False):
         for s in fix_stations:
             csv_writer.writerow(s)
 
+        putDMR = False
         i = 0
         rows = len(fix_stations)
         for table in tables:
-            if i == 2:
+            if i == 2 or (i == 1 and not putDMR):
                 break
             rows = convert_table(csv_writer, rows, table, i == 1)
             print(" ")
             print(" ")
             i += 1
 
+        csv_writer.writerow(create_from(rows, f"K", "147.1000", f"K"))
+        rows += 1
+    
+        f = 145.2
+        c = 0
+        while f <= 145.575:
+            csv_writer.writerow(create_from(rows, f"VHF {c}", f"{f:.4f}", f"VHF (2m) {f:.4f}"))
+            f += 0.025
+            rows += 1
+            c += 1
+
+        f = 433.0
+        c = 0
+        while f <= 434.575:
+            csv_writer.writerow(create_from(rows, f"UHF {c}", f"{f:.4f}", f"UHF (70cm) {f:.4f}"))
+            f += 0.025
+            rows += 1
+            c += 1
+
+        f = 446.00625
+        c = 1
+        while f <= 446.19375:
+            csv_writer.writerow(create_from(rows, f"PMR {c}", f"{f:.4f}", f"PMR {c} {f:.4f}"))
+            f += 0.0125
+            rows += 1
+            c += 1
+
 
 if __name__ == "__main__":
     load_dotenv()
     print(os.getenv("WEBPAGE"))
 
-    #main()
+    main()
